@@ -12,4 +12,4 @@ Select which elements to preview. Only elements existing in the IFC file can be 
 # View
 Click update to refresh the view. Click the elipsis (...) to export to other file formats, or download an image.
 
-![image](https://user-images.githubusercontent.com/93203883/212714155-7bbbc3eb-4690-4975-ae0f-c983585d3df3.png)
+![image](https://user-images.githubusercontent.com/93203883/212715819-4b5429cb-3c48-42a1-aeed-bb1830150ae7.png)
