@@ -10,7 +10,7 @@ from shapely import affinity, Point
 from viktor import ViktorController, File, Color, geometry, UserException
 from viktor.geometry import Triangle, TriangleAssembly, Material
 from viktor.parametrization import ViktorParametrization, FileField, MultiSelectField, \
-    LineBreak
+    LineBreak, Text
 from viktor.views import GeometryView, GeometryResult
 
 
@@ -29,8 +29,35 @@ def get_element_options(params, **kwargs) -> List[str]:
 
 class Parametrization(ViktorParametrization):
     """Viktor parametrization."""
+    text1 = Text(
+        """
+# Welcome to the ifc-viewer app!
+
+This is a sample app demonstrating how to import and view IFC files. 
+The IFC filetype (.ifc) is an international standard to import and 
+export building objects and their properties. 
+Most BIM-software packages allow you to import and export IFC files. 
+With this application we want to show how to handle 
+IFC files in a Viktor application. 
+The source code of this application can be found on 
+[github](https://github.com/viktor-platform/ifc-viewer).
+
+## File upload
+Make sure that your file contains IfcElements with a geometry representation. 
+The app is tested with IFC 4 files. For reference, check out some 
+[example files](https://www.ifcwiki.org/index.php?title=KIT_IFC_Examples).
+        """
+    )
     ifc_upload = FileField("Upload model", file_types=[".ifc"], max_size=20_000_000)
     lb = LineBreak()
+    text2 = Text(
+        """
+## Element filtering
+Select which elements to preview. 
+Only elements existing in the IFC file can be selected. 
+Geometry of selected elements will be shown in the 3D viewer.
+        """
+    )
     element_filter = MultiSelectField("Filter elements", options=get_element_options)
 
 
