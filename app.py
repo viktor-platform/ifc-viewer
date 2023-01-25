@@ -1,4 +1,6 @@
 import random
+import os
+import pathlib
 from pathlib import Path
 from random import randint
 from tempfile import NamedTemporaryFile
@@ -9,16 +11,21 @@ import ifcopenshell.geom as geom
 from shapely import affinity, Point
 from viktor import ViktorController, File, Color, geometry, UserException
 from viktor.geometry import Triangle, TriangleAssembly, Material
-from viktor.parametrization import ViktorParametrization, FileField, MultiSelectField, \
-    LineBreak, Text
+from viktor.parametrization import ViktorParametrization, FileField, MultiSelectField, DownloadButton, \
+    LineBreak, Text, Lookup, IsFalse, BooleanField, ActionButton
 from viktor.views import GeometryView, GeometryResult
+from viktor.result import DownloadResult
 
 
 def get_element_options(params, **kwargs) -> List[str]:
     """Get all existing geometry element types from ifc file."""
-    if not params.ifc_upload:
+    if not params.ifc_upload and params.get_sample_ifc_toggle == False:
         return []
-    model = load_ifc_file_into_model(params.ifc_upload.file)
+    elif params.get_sample_ifc_toggle == True:  
+        params.sample_ifc = File.from_path(Path(__file__).parent/"AC20-FZK-Haus (Sample IFC).ifc")
+        model = load_ifc_file_into_model(params.sample_ifc)
+    else:
+        model = load_ifc_file_into_model(params.ifc_upload.file)
     elements = model.by_type("IfcElement")
     element_options = []
     for element in elements:
@@ -48,7 +55,20 @@ The app is tested with IFC 4 files. For reference, check out some
 [example files](https://www.ifcwiki.org/index.php?title=KIT_IFC_Examples).
         """
     )
-    ifc_upload = FileField("Upload model", file_types=[".ifc"], max_size=20_000_000)
+
+    ifc_upload = FileField(
+        "Upload model", 
+        file_types=[".ifc"], 
+        max_size=20_000_000,
+    )
+    
+    get_sample_ifc_toggle = BooleanField(
+        "Get sample IFC File", 
+        default=False, 
+        flex=30,
+    )
+
+
     lb = LineBreak()
     text2 = Text(
         """
@@ -58,7 +78,22 @@ Only elements existing in the IFC file can be selected.
 Geometry of selected elements will be shown in the 3D viewer.
         """
     )
-    element_filter = MultiSelectField("Filter elements", options=get_element_options)
+    element_filter = MultiSelectField(
+        "Filter elements", 
+        options=get_element_options,    
+    )
+
+    lb = LineBreak()
+    text3 = Text(
+        """
+## Download
+Only selected elements will be downloaded, this allows for easy removal of any of the elements
+        """
+    )
+    download = DownloadButton(
+        'Download', 
+        method='download_file',
+    )
 
 
 class Controller(ViktorController):
@@ -67,15 +102,32 @@ class Controller(ViktorController):
     label = 'My Entity Type'
     parametrization = Parametrization
 
+    def download_file(self, params, **kwargs):
+        model = load_ifc_file_into_model(params.ifc_upload.file)
+        #remove all other parts from the ifc file which are not viewed
+        for element in model.by_type("IfcElement"):
+            if element.get_info()["type"] not in params.element_filter:
+                model.remove(element)
+        #part where we save the model as seen in the viewer
+        temp_file = NamedTemporaryFile(suffix=".ifc", delete=False, mode="wb")
+        model.write(str(Path(temp_file.name)))
+        temp_file.close()
+        path_out = Path(temp_file.name)
+        return DownloadResult(path_out.read_bytes(), 'filtered_elements.ifc')
+
     @staticmethod
     @GeometryView("3D model of filtered elements", duration_guess=12)
     def ifc_view(params, **kwargs):
         """View 3D model of filtered elements from uploaded .ifc file."""
 
         # Load ifc file and set settings
-        if not params.ifc_upload or not params.element_filter:
+        if not params.element_filter and params.get_sample_ifc_toggle == False:
             raise UserException("Upload ifc file and select elements.")
-        model = load_ifc_file_into_model(params.ifc_upload.file)
+        if params.get_sample_ifc_toggle == True:
+            params.sample_ifc = File.from_path(Path(__file__).parent/"AC20-FZK-Haus (Sample IFC).ifc")
+            model = load_ifc_file_into_model(params.sample_ifc)
+        else:
+            model = load_ifc_file_into_model(params.ifc_upload.file)
         settings = ifcopenshell.geom.settings()
 
         # Get geometry from selected elements
