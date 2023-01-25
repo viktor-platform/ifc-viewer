@@ -63,7 +63,7 @@ The app is tested with IFC 4 files. For reference, check out some
     )
     
     get_sample_ifc_toggle = BooleanField(
-        "Get sample IFC File", 
+        "Use sample IFC File", 
         default=False, 
         flex=30,
     )
