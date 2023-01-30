@@ -5,6 +5,7 @@ from tempfile import NamedTemporaryFile
 from typing import Any, List
 
 import ifcopenshell
+import ifcopenshell.geom
 from shapely import Point, affinity
 from viktor import Color, File, UserException, ViktorController, geometry
 from viktor.geometry import Material, Triangle, TriangleAssembly
@@ -89,7 +90,7 @@ Geometry of selected elements will be shown in the 3D viewer.
         options=get_element_options,
     )
 
-    lb = LineBreak()
+    lb2 = LineBreak()
     text3 = Text(
         """
 ## Download
@@ -109,7 +110,13 @@ class Controller(ViktorController):
     parametrization = Parametrization
 
     def download_file(self, params, **kwargs):
-        model = load_ifc_file_into_model(params.ifc_upload.file)
+        if params.get_sample_ifc_toggle == True:
+            params.sample_ifc = File.from_path(
+                Path(__file__).parent / "AC20-FZK-Haus (Sample IFC).ifc"
+            )
+            model = load_ifc_file_into_model(params.sample_ifc)
+        else:
+            model = load_ifc_file_into_model(params.ifc_upload.file)
         # remove all other parts from the ifc file which are not viewed
         for element in model.by_type("IfcElement"):
             if element.get_info()["type"] not in params.element_filter:
@@ -149,8 +156,8 @@ class Controller(ViktorController):
                 # Create triangle assembly and assign material
                 triangle_assembly = TriangleAssembly(
                     triangles=get_faces_from_ifc_element(element, settings),
-                    material=material,
-                )
+                    material=material
+                    )
                 geometry_groups.append(triangle_assembly)
 
         return GeometryResult(geometry_groups)
