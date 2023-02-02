@@ -1,13 +1,13 @@
 import time
 import random
 from pathlib import Path
-from random import randint
 from tempfile import NamedTemporaryFile
 from typing import Any, List
 import trimesh
 import ifcopenshell
 import ifcopenshell.geom
-from viktor import Color, File, UserException, ViktorController
+from munch import Munch
+from viktor import Color, File, ViktorController
 from viktor.parametrization import (
     BooleanField,
     DownloadButton,
@@ -24,17 +24,51 @@ from viktor.views import GeometryResult, GeometryView, WebView, WebResult
 from viktor.core import progress_message
 
 
+PROGRESS_MESSAGE_DELAY = 3  # seconds
+
+
+def _use_correct_file(params: Munch):
+    if params.get_sample_ifc_toggle is True:
+        params.use_file = File.from_path(Path(__file__).parent / "AC20-FZK-Haus (Sample IFC).ifc")
+    else:
+        params.use_file = params.ifc_upload.file
+    return params.use_file
+
+
+def _load_ifc_file(params: Munch) -> Any:
+    """Load ifc file into ifc model object."""
+    ifc_upload = _use_correct_file(params)
+    path = ifc_upload.copy().source
+    model = ifcopenshell.open(path)
+    return model
+
+
 def get_element_options(params, **kwargs) -> List[str]:
     """Get all existing geometry element types from ifc file."""
     if not params.ifc_upload and not params.get_sample_ifc_toggle:
         return []
-    model = load_ifc_file(params)
+    model = _load_ifc_file(params)
     elements = model.by_type("IfcElement")
     element_options = []
     for element in elements:
         if element.Representation:
             element_options.append(element.get_info()["type"])
     return list(set(element_options))
+
+
+def get_random_color(seed_word: str) -> Color:
+    """Will always return same color for same name."""
+    random.seed(seed_word)
+    color_list = [
+        (59, 89, 152),
+        (139, 157, 195),
+        (223, 227, 238),
+        (247, 247, 247),
+        (255, 220, 115),
+        (55, 186, 186),
+    ]
+    chosen_color = random.choice(color_list)
+    return Color(*chosen_color)
 
 
 class Parametrization(ViktorParametrization):
@@ -48,7 +82,7 @@ This is a sample app demonstrating how to import, view, seperate and download th
 The IFC filetype (.ifc) is an international standard to import and 
 export building objects and their properties. 
 Most BIM-software packages allow you to import and export IFC files. 
-With this application we want to show that a Viktor application can handle and transform your .ifc file. 
+With this application we want to show that a VIKTOR application can handle and transform your .ifc file. 
 The source code of this application can be found on 
 [github](https://github.com/viktor-platform/ifc-viewer).
 
@@ -109,27 +143,39 @@ class Controller(ViktorController):
     label = "My Entity Type"
     parametrization = Parametrization
 
-    def download_file(self, params, **kwargs):
-        model = load_ifc_file(params)
+    @staticmethod
+    def download_file(params: Munch, **kwargs):
+        progress_message("Load IFC file...")
+        model = _load_ifc_file(params)
+        # initialize the variables responsible for progress message delays
+        delta_time = PROGRESS_MESSAGE_DELAY + 1
+        start = time.time()
         # remove all other parts from the ifc file which are not viewed
         for element in model.by_type("IfcElement"):
             if element.get_info()["type"] not in params.element_filter:
+                if delta_time > PROGRESS_MESSAGE_DELAY:
+                    # the logic of progress message delays is implemented to avoid cases where the progress messages
+                    # flood the progress message queue
+                    start = time.time()
+                    progress_message(f"Removing element: {element.get_info()['type']}")
                 model.remove(element)
+            delta_time = time.time() - start
         # part where we save the model as seen in the viewer
+        progress_message("Save file...")
         temp_file = NamedTemporaryFile(suffix=".ifc", delete=False, mode="wb")
         model.write(str(Path(temp_file.name)))
         temp_file.close()
         path_out = Path(temp_file.name)
+        progress_message("Download processed file...")
         return DownloadResult(path_out.read_bytes(), "filtered_elements.ifc")
 
-    @staticmethod
     @GeometryView("3D model of filtered elements", duration_guess=12)
-    def ifc_view(params, **kwargs):
+    def ifc_view(self, params: Munch, **kwargs):
         """view the 3D model of filtered elements from uploaded .ifc file"""
         if not params.element_filter:
+            # if no elements were selected to filter, assume the entire model to be rendered
             params.element_filter = get_element_options(params)
-           # raise UserException("Upload ifc file and select elements.")
-        trimesh_model = load_ifc_file_into_model(params)
+        trimesh_model = self._load_ifc_file_into_model(params)
         geometry = File()
         with geometry.open_binary() as w:
             w.write(trimesh.exchange.gltf.export_glb(trimesh_model))
@@ -137,76 +183,47 @@ class Controller(ViktorController):
         return GeometryResult(geometry)
 
     @WebView("What's next?", duration_guess=1)
-    def final_step(self, params, **kwargs):
-        """Initiates the process of rendering the last step."""
+    def whats_next(self, **kwargs):
+        """Initiates the process of rendering the "What's next?" tab."""
         html_path = Path(__file__).parent / "final_step.html"
         with html_path.open() as f:
             html_string = f.read()
         return WebResult(html=html_string)
 
-def load_ifc_file(params) -> Any:
-    """Load ifc file into ifc model object."""
-    ifc_upload = use_correct_file(params)
-    path = ifc_upload.copy().source
-    model = ifcopenshell.open(path)
-    return model
+    @staticmethod
+    def _load_ifc_file_into_model(params: Munch) -> Any:
+        """Load ifc file into `trimesh.Scene` object.
 
-def load_ifc_file_into_model(params) -> Any:
-    """Load ifc file into model =object"""
-    progress_message("Loading .IFC Model...")
-    ifc_upload = use_correct_file(params)
-    path = ifc_upload.copy().source
-    model = ifcopenshell.open(path)
-    settings = ifcopenshell.geom.settings()
-    settings.set(settings.USE_WORLD_COORDS, True)
-    scene = trimesh.Scene()
-    delta_time = 3
-    for ifc_entity in model.by_type("IfcElement"):
-        if delta_time > 2:
-            start = time.time()
-            progress_message(f"Meshing element: {ifc_entity.get_info()['type']}...")
-        if (
-            ifc_entity.Representation
-            and ifc_entity.get_info()["type"] in params.element_filter
-        ):
-            shape = ifcopenshell.geom.create_shape(settings, ifc_entity)
-            ios_vertices = shape.geometry.verts
-            ios_faces = shape.geometry.faces
+        In the process, it also filters all the elements that were selected.
+        """
+        progress_message("Loading .ifc Model...")
+        ifc_upload = _use_correct_file(params)
+        path = ifc_upload.copy().source
+        model = ifcopenshell.open(path)
+        settings = ifcopenshell.geom.settings()
+        settings.set(settings.USE_WORLD_COORDS, True)
+        scene = trimesh.Scene()
+        # initialize the variables responsible for progress message delays
+        delta_time = PROGRESS_MESSAGE_DELAY + 1
+        start = time.time()
+        for ifc_entity in model.by_type("IfcElement"):
+            if delta_time > PROGRESS_MESSAGE_DELAY:
+                # the logic of progress message delays is implemented to avoid cases where the progress messages
+                # flood the progress message queue
+                start = time.time()
+                progress_message(f"Meshing element: {ifc_entity.get_info()['type']}...")
+            if ifc_entity.Representation and ifc_entity.get_info()["type"] in params.element_filter:
+                shape = ifcopenshell.geom.create_shape(settings, ifc_entity)
+                ios_vertices = shape.geometry.verts
+                ios_faces = shape.geometry.faces
 
-            vertices = [
-                [ios_vertices[i], ios_vertices[i + 1], ios_vertices[i + 2]]
-                for i in range(0, len(ios_vertices), 3)
-            ]
-            faces = [
-                [ios_faces[i], ios_faces[i + 1], ios_faces[i + 2]]
-                for i in range(0, len(ios_faces), 3)
-            ]
-            color = get_random_color(ifc_entity.get_info()["type"])
-            mesh = trimesh.Trimesh(vertices=vertices, faces=faces, face_colors=color)
+                vertices = [
+                    [ios_vertices[i], ios_vertices[i + 1], ios_vertices[i + 2]] for i in range(0, len(ios_vertices), 3)
+                ]
+                faces = [[ios_faces[i], ios_faces[i + 1], ios_faces[i + 2]] for i in range(0, len(ios_faces), 3)]
+                color = get_random_color(ifc_entity.get_info()["type"])
+                mesh = trimesh.Trimesh(vertices=vertices, faces=faces, face_colors=color)
 
-            scene.add_geometry(mesh)
-        delta_time = time.time() - start
-    return scene
-
-def get_random_color(seed_word: str) -> Color:
-    """Will always return same color for same name."""
-    random.seed(seed_word)
-    color_list = [
-        [59,89,152],
-        [139,157,195],
-        [223,227,238],
-        [247,247,247],
-        [255,220,115],
-        [55,186,186],
-    ]
-    chosen_color = random.choice(color_list)
-    return Color(chosen_color[0],chosen_color[1],chosen_color[2])
-
-def use_correct_file(params, **kwargs):
-    if params.get_sample_ifc_toggle is True:
-        params.use_file = File.from_path(
-                Path(__file__).parent / "AC20-FZK-Haus (Sample IFC).ifc"
-            )
-    else:
-        params.use_file = params.ifc_upload.file
-    return params.use_file
+                scene.add_geometry(mesh)
+            delta_time = time.time() - start
+        return scene
