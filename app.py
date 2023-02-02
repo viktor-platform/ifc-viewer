@@ -29,7 +29,9 @@ PROGRESS_MESSAGE_DELAY = 3  # seconds
 
 def _use_correct_file(params: Munch):
     if params.get_sample_ifc_toggle is True:
-        params.use_file = File.from_path(Path(__file__).parent / "AC20-FZK-Haus (Sample IFC).ifc")
+        params.use_file = File.from_path(
+            Path(__file__).parent / "AC20-FZK-Haus (Sample IFC).ifc"
+        )
     else:
         params.use_file = params.ifc_upload.file
     return params.use_file
@@ -78,11 +80,13 @@ class Parametrization(ViktorParametrization):
         """
 # Welcome to the ifc-viewer app!
 
-This is a sample app demonstrating how to import, view, seperate and download the elements of an IFC files. 
+This is a sample app demonstrating how to import, view, seperate and download the 
+elements of an IFC files. 
 The IFC filetype (.ifc) is an international standard to import and 
 export building objects and their properties. 
 Most BIM-software packages allow you to import and export IFC files. 
-With this application we want to show that a VIKTOR application can handle and transform your .ifc file. 
+With this application we want to show that a VIKTOR application can handle and 
+transform your .ifc file. 
 The source code of this application can be found on 
 [github](https://github.com/viktor-platform/ifc-viewer).
 
@@ -154,7 +158,8 @@ class Controller(ViktorController):
         for element in model.by_type("IfcElement"):
             if element.get_info()["type"] not in params.element_filter:
                 if delta_time > PROGRESS_MESSAGE_DELAY:
-                    # the logic of progress message delays is implemented to avoid cases where the progress messages
+                    # the logic of progress message delays is implemented
+                    # to avoid cases where the progress messages
                     # flood the progress message queue
                     start = time.time()
                     progress_message(f"Removing element: {element.get_info()['type']}")
@@ -173,7 +178,8 @@ class Controller(ViktorController):
     def ifc_view(self, params: Munch, **kwargs):
         """view the 3D model of filtered elements from uploaded .ifc file"""
         if not params.element_filter:
-            # if no elements were selected to filter, assume the entire model to be rendered
+            # if no elements were selected to filter, assume the
+            # entire model to be rendered
             params.element_filter = get_element_options(params)
         trimesh_model = self._load_ifc_file_into_model(params)
         geometry = File()
@@ -208,21 +214,31 @@ class Controller(ViktorController):
         start = time.time()
         for ifc_entity in model.by_type("IfcElement"):
             if delta_time > PROGRESS_MESSAGE_DELAY:
-                # the logic of progress message delays is implemented to avoid cases where the progress messages
+                # the logic of progress message delays is implemented to avoid
+                # cases where the progress messages
                 # flood the progress message queue
                 start = time.time()
                 progress_message(f"Meshing element: {ifc_entity.get_info()['type']}...")
-            if ifc_entity.Representation and ifc_entity.get_info()["type"] in params.element_filter:
+            if (
+                ifc_entity.Representation
+                and ifc_entity.get_info()["type"] in params.element_filter
+            ):
                 shape = ifcopenshell.geom.create_shape(settings, ifc_entity)
                 ios_vertices = shape.geometry.verts
                 ios_faces = shape.geometry.faces
 
                 vertices = [
-                    [ios_vertices[i], ios_vertices[i + 1], ios_vertices[i + 2]] for i in range(0, len(ios_vertices), 3)
+                    [ios_vertices[i], ios_vertices[i + 1], ios_vertices[i + 2]]
+                    for i in range(0, len(ios_vertices), 3)
                 ]
-                faces = [[ios_faces[i], ios_faces[i + 1], ios_faces[i + 2]] for i in range(0, len(ios_faces), 3)]
+                faces = [
+                    [ios_faces[i], ios_faces[i + 1], ios_faces[i + 2]]
+                    for i in range(0, len(ios_faces), 3)
+                ]
                 color = get_random_color(ifc_entity.get_info()["type"])
-                mesh = trimesh.Trimesh(vertices=vertices, faces=faces, face_colors=color)
+                mesh = trimesh.Trimesh(
+                    vertices=vertices, faces=faces, face_colors=color
+                )
 
                 scene.add_geometry(mesh)
             delta_time = time.time() - start
