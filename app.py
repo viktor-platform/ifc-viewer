@@ -1,14 +1,13 @@
+import time
 import random
 from pathlib import Path
-from random import randint
 from tempfile import NamedTemporaryFile
 from typing import Any, List
-
+import trimesh
 import ifcopenshell
 import ifcopenshell.geom
-from shapely import Point, affinity
-from viktor import Color, File, UserException, ViktorController, geometry
-from viktor.geometry import Material, Triangle, TriangleAssembly
+from munch import Munch
+from viktor import Color, File, ViktorController
 from viktor.parametrization import (
     BooleanField,
     DownloadButton,
@@ -16,29 +15,62 @@ from viktor.parametrization import (
     LineBreak,
     MultiSelectField,
     Text,
+    IsFalse,
+    Lookup,
     ViktorParametrization,
 )
 from viktor.result import DownloadResult
-from viktor.views import GeometryResult, GeometryView
+from viktor.views import GeometryResult, GeometryView, WebView, WebResult
+from viktor.core import progress_message
+
+
+PROGRESS_MESSAGE_DELAY = 3  # seconds
+
+
+def _use_correct_file(params: Munch):
+    if params.get_sample_ifc_toggle is True:
+        params.use_file = File.from_path(
+            Path(__file__).parent / "AC20-FZK-Haus (Sample IFC).ifc"
+        )
+    else:
+        params.use_file = params.ifc_upload.file
+    return params.use_file
+
+
+def _load_ifc_file(params: Munch) -> Any:
+    """Load ifc file into ifc model object."""
+    ifc_upload = _use_correct_file(params)
+    path = ifc_upload.copy().source
+    model = ifcopenshell.open(path)
+    return model
 
 
 def get_element_options(params, **kwargs) -> List[str]:
     """Get all existing geometry element types from ifc file."""
     if not params.ifc_upload and not params.get_sample_ifc_toggle:
         return []
-    if params.get_sample_ifc_toggle:
-        params.sample_ifc = File.from_path(
-            Path(__file__).parent / "AC20-FZK-Haus (Sample IFC).ifc"
-        )
-        model = load_ifc_file_into_model(params.sample_ifc)
-    else:
-        model = load_ifc_file_into_model(params.ifc_upload.file)
+    model = _load_ifc_file(params)
     elements = model.by_type("IfcElement")
     element_options = []
     for element in elements:
         if element.Representation:
             element_options.append(element.get_info()["type"])
     return list(set(element_options))
+
+
+def get_random_color(seed_word: str) -> Color:
+    """Will always return same color for same name."""
+    random.seed(seed_word)
+    color_list = [
+        (59, 89, 152),
+        (139, 157, 195),
+        (223, 227, 238),
+        (247, 247, 247),
+        (255, 220, 115),
+        (55, 186, 186),
+    ]
+    chosen_color = random.choice(color_list)
+    return Color(*chosen_color)
 
 
 class Parametrization(ViktorParametrization):
@@ -48,12 +80,13 @@ class Parametrization(ViktorParametrization):
         """
 # Welcome to the ifc-viewer app!
 
-This is a sample app demonstrating how to import and view IFC files. 
+This is a sample app demonstrating how to import, view, seperate and download the 
+elements of an IFC files. 
 The IFC filetype (.ifc) is an international standard to import and 
 export building objects and their properties. 
 Most BIM-software packages allow you to import and export IFC files. 
-With this application we want to show how to handle 
-IFC files in a Viktor application. 
+With this application we want to show that a VIKTOR application can handle and 
+transform your .ifc file. 
 The source code of this application can be found on 
 [github](https://github.com/viktor-platform/ifc-viewer).
 
@@ -67,12 +100,13 @@ The app is tested with IFC 4 files. For reference, check out some
     ifc_upload = FileField(
         "Upload model",
         file_types=[".ifc"],
+        visible=IsFalse(Lookup("get_sample_ifc_toggle")),
         max_size=20_000_000,
     )
 
     get_sample_ifc_toggle = BooleanField(
         "Use sample IFC File",
-        default=False,
+        default=True,
         flex=30,
     )
 
@@ -94,12 +128,16 @@ Geometry of selected elements will be shown in the 3D viewer.
     text3 = Text(
         """
 ## Download
-Only selected elements will be downloaded, this allows for easy removal of any of the elements
+Only selected elements will be downloaded, this allows for easy removal 
+of any of the elements that are not needed. This is a useful application 
+for when a colleague may want to perform some analysis on structural elements 
+only.
         """
     )
     download = DownloadButton(
         "Download",
         method="download_file",
+        longpoll=True,
     )
 
 
@@ -108,119 +146,101 @@ class Controller(ViktorController):
 
     label = "My Entity Type"
     parametrization = Parametrization
+    viktor_enforce_field_constraints = True
 
-    def download_file(self, params, **kwargs):
-        if params.get_sample_ifc_toggle == True:
-            params.sample_ifc = File.from_path(
-                Path(__file__).parent / "AC20-FZK-Haus (Sample IFC).ifc"
-            )
-            model = load_ifc_file_into_model(params.sample_ifc)
-        else:
-            model = load_ifc_file_into_model(params.ifc_upload.file)
+    @staticmethod
+    def download_file(params: Munch, **kwargs):
+        progress_message("Load IFC file...")
+        model = _load_ifc_file(params)
+        # initialize the variables responsible for progress message delays
+        delta_time = PROGRESS_MESSAGE_DELAY + 1
+        start = time.time()
         # remove all other parts from the ifc file which are not viewed
         for element in model.by_type("IfcElement"):
             if element.get_info()["type"] not in params.element_filter:
+                if delta_time > PROGRESS_MESSAGE_DELAY:
+                    # the logic of progress message delays is implemented
+                    # to avoid cases where the progress messages
+                    # flood the progress message queue
+                    start = time.time()
+                    progress_message(f"Removing element: {element.get_info()['type']}")
                 model.remove(element)
+            delta_time = time.time() - start
         # part where we save the model as seen in the viewer
+        progress_message("Save file...")
         temp_file = NamedTemporaryFile(suffix=".ifc", delete=False, mode="wb")
         model.write(str(Path(temp_file.name)))
         temp_file.close()
         path_out = Path(temp_file.name)
+        progress_message("Download processed file...")
         return DownloadResult(path_out.read_bytes(), "filtered_elements.ifc")
 
-    @staticmethod
     @GeometryView("3D model of filtered elements", duration_guess=12)
-    def ifc_view(params, **kwargs):
-        """View 3D model of filtered elements from uploaded .ifc file."""
+    def ifc_view(self, params: Munch, **kwargs):
+        """view the 3D model of filtered elements from uploaded .ifc file"""
+        if not params.element_filter:
+            # if no elements were selected to filter, assume the
+            # entire model to be rendered
+            params.element_filter = get_element_options(params)
+        trimesh_model = self._load_ifc_file_into_model(params)
+        geometry = File()
+        with geometry.open_binary() as w:
+            w.write(trimesh.exchange.gltf.export_glb(trimesh_model))
 
-        # Load ifc file and set settings
-        if not params.element_filter and params.get_sample_ifc_toggle == False:
-            raise UserException("Upload ifc file and select elements.")
-        if params.get_sample_ifc_toggle == True:
-            params.sample_ifc = File.from_path(
-                Path(__file__).parent / "AC20-FZK-Haus (Sample IFC).ifc"
-            )
-            model = load_ifc_file_into_model(params.sample_ifc)
-        else:
-            model = load_ifc_file_into_model(params.ifc_upload.file)
+        return GeometryResult(geometry)
+
+    @WebView("What's next?", duration_guess=1)
+    def whats_next(self, **kwargs):
+        """Initiates the process of rendering the "What's next?" tab."""
+        html_path = Path(__file__).parent / "final_step.html"
+        with html_path.open() as f:
+            html_string = f.read()
+        return WebResult(html=html_string)
+
+    @staticmethod
+    def _load_ifc_file_into_model(params: Munch) -> Any:
+        """Load ifc file into `trimesh.Scene` object.
+
+        In the process, it also filters all the elements that were selected.
+        """
+        progress_message("Loading .ifc Model...")
+        ifc_upload = _use_correct_file(params)
+        path = ifc_upload.copy().source
+        model = ifcopenshell.open(path)
         settings = ifcopenshell.geom.settings()
+        settings.set(settings.USE_WORLD_COORDS, True)
+        scene = trimesh.Scene()
+        # initialize the variables responsible for progress message delays
+        delta_time = PROGRESS_MESSAGE_DELAY + 1
+        start = time.time()
+        for ifc_entity in model.by_type("IfcElement"):
+            if delta_time > PROGRESS_MESSAGE_DELAY:
+                # the logic of progress message delays is implemented to avoid
+                # cases where the progress messages
+                # flood the progress message queue
+                start = time.time()
+                progress_message(f"Meshing element: {ifc_entity.get_info()['type']}...")
+            if (
+                ifc_entity.Representation
+                and ifc_entity.get_info()["type"] in params.element_filter
+            ):
+                shape = ifcopenshell.geom.create_shape(settings, ifc_entity)
+                ios_vertices = shape.geometry.verts
+                ios_faces = shape.geometry.faces
 
-        # Get geometry from selected elements
-        geometry_groups = []
-        selected_elements = params.element_filter
-        for element_type in selected_elements:
-            material = Material(name=element_type, color=get_random_color(element_type))
-            elements = model.by_type(element_type)
-            for element in elements:
+                vertices = [
+                    [ios_vertices[i], ios_vertices[i + 1], ios_vertices[i + 2]]
+                    for i in range(0, len(ios_vertices), 3)
+                ]
+                faces = [
+                    [ios_faces[i], ios_faces[i + 1], ios_faces[i + 2]]
+                    for i in range(0, len(ios_faces), 3)
+                ]
+                color = get_random_color(ifc_entity.get_info()["type"])
+                mesh = trimesh.Trimesh(
+                    vertices=vertices, faces=faces, face_colors=color
+                )
 
-                # Create triangle assembly and assign material
-                triangle_assembly = TriangleAssembly(
-                    triangles=get_faces_from_ifc_element(element, settings),
-                    material=material
-                    )
-                geometry_groups.append(triangle_assembly)
-
-        return GeometryResult(geometry_groups)
-
-
-def get_faces_from_ifc_element(element, settings) -> List[Triangle]:
-    """Get viktor.geometry triangular faces from ifc element geometry."""
-
-    # Get ifc element geometry
-    shape = ifcopenshell.geom.create_shape(settings, element)
-    faces = shape.geometry.faces
-
-    # Convert IfcOpenShell matrix to Shapely matrix
-    matrix = shape.transformation.matrix.data
-    shapely_matrix = [
-        matrix[0],
-        matrix[3],
-        matrix[6],
-        matrix[1],
-        matrix[4],
-        matrix[7],
-        matrix[2],
-        matrix[5],
-        matrix[8],
-        matrix[9],
-        matrix[10],
-        matrix[11],
-    ]
-
-    # Transform all vertices with transformation matrix
-    verts = shape.geometry.verts
-    grouped_verts = []
-    for i in range(0, len(verts), 3):
-        point = Point(verts[i], verts[i + 1], verts[i + 2])
-        point = affinity.affine_transform(point, shapely_matrix)
-        grouped_verts.append(geometry.Point(point.x, point.y, point.z))
-
-    # Convert vertices of each face to triangle
-    grouped_faces = []
-    for i in range(0, len(faces), 3):
-        triangle = Triangle(
-            grouped_verts[faces[i]],
-            grouped_verts[faces[i + 1]],
-            grouped_verts[faces[i + 2]],
-        )
-        grouped_faces.append(triangle)
-
-    return grouped_faces
-
-
-def load_ifc_file_into_model(file: File) -> Any:
-    """Load ifc file into ifc model object."""
-    ifc_upload: File = file
-    temp_file = NamedTemporaryFile(suffix=".sld", delete=False, mode="wb")
-    temp_file.write(ifc_upload.getvalue_binary())
-    temp_file.close()
-    path = Path(temp_file.name)
-    model = ifcopenshell.open(path)
-    return model
-
-
-def get_random_color(seed_word: str) -> Color:
-    """Generate pseudo random rgb color.
-    Will always return same color for same name."""
-    random.seed(seed_word)
-    return Color(randint(128, 220), (randint(100, 128)), randint(100, 220))
+                scene.add_geometry(mesh)
+            delta_time = time.time() - start
+        return scene
