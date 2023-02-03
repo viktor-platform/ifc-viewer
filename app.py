@@ -146,6 +146,7 @@ class Controller(ViktorController):
 
     label = "My Entity Type"
     parametrization = Parametrization
+    viktor_enforce_field_constraints = True
 
     @staticmethod
     def download_file(params: Munch, **kwargs):

@@ -1,4 +1,4 @@
-viktor==13.7.0
+# viktor==13.7.0
 ifcopenshell==0.7.0
-trimesh==3.18.1
-scipy==1.7.0
+trimesh==3.18.3
+scipy==1.7.3
