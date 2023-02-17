@@ -30,7 +30,7 @@ PROGRESS_MESSAGE_DELAY = 3  # seconds
 def _use_correct_file(params: Munch):
     if params.get_sample_ifc_toggle is True:
         params.use_file = File.from_path(
-            Path(__file__).parent / "AC20-FZK-Haus (Sample IFC).ifc"
+            Path(__file__).parent / "RST_basic_sample_project.ifc"
         )
     else:
         params.use_file = params.ifc_upload.file
