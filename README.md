@@ -1,10 +1,10 @@
-![](https://img.shields.io/badge/SDK-v14.0.0-blue) <Please check version is the same as specified in requirements.txt>
+![](https://img.shields.io/badge/SDK-v14.6.0-blue) <Please check version is the same as specified in requirements.txt>
 
 # ifc-viewer
 This sample app demonstrates how to import, view and transform IFC files, see an animation of the VIKTOR application below.
 You can access the app right now, using this [link!](https://demo.viktor.ai/public/ifc-viewer)
 
-![](Animation.gif)
+![](animation.gif)
 
 The IFC filetype (.ifc) is an international standard to import and export building objects and their properties. 
 Most BIM-software packages allow you to import and export IFC files. With this application we want to show how to handle IFC files in a Viktor application.
