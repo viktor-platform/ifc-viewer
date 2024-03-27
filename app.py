@@ -6,8 +6,8 @@ from typing import Any, List
 import ifcopenshell
 import ifcopenshell.geom
 from munch import Munch
-from viktor import  File, ViktorController
-from viktor.views import IFCView,IFCResult
+from viktor import File, ViktorController
+from viktor.views import IFCView, IFCResult
 from viktor.parametrization import (
     BooleanField,
     DownloadButton,
@@ -21,8 +21,10 @@ from viktor.parametrization import (
 from viktor.result import DownloadResult
 from viktor.core import progress_message
 
+from ifcopenshell import file
 
 PROGRESS_MESSAGE_DELAY = 3  # seconds
+
 
 def _use_correct_file(params: Munch) -> File:
     if params.get_sample_ifc_toggle is True:
@@ -33,12 +35,14 @@ def _use_correct_file(params: Munch) -> File:
         params.use_file = params.ifc_upload.file
     return params.use_file
 
-def _load_ifc_file(params: Munch) -> Any:
+
+def _load_ifc_file(params: Munch) -> file:
     """Load ifc file into ifc model object."""
     ifc_upload = _use_correct_file(params)
     path = ifc_upload.copy().source
     model = ifcopenshell.open(path)
     return model
+
 
 def get_element_options(params, **kwargs) -> List[str]:
     """Get all existing geometry element types from ifc file."""
@@ -51,6 +55,7 @@ def get_element_options(params, **kwargs) -> List[str]:
         if element.Representation:
             element_options.append(element.get_info()["type"])
     return list(set(element_options))
+
 
 class Parametrization(ViktorParametrization):
     """Viktor parametrization."""
@@ -106,6 +111,7 @@ Start building cloud apps [now.](https://www.viktor.ai/start-building-apps)
 Or check more apps created by others in our [Apps Gallery](https://www.viktor.ai/apps-gallery/category/all/discipline/all/integration/all/1)🚀 
         """
     )
+
 
 class Controller(ViktorController):
     """Viktor Controller."""
