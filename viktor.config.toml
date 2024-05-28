@@ -1,2 +1,4 @@
 app_type = 'editor'
 python_version = '3.12'
+
+registered_name = 'ifc-viewer'
