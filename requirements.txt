@@ -1,3 +1,2 @@
-viktor==14.6.0
-ifcopenshell==0.7.0.230329
-scipy==1.10.0
+viktor==14.10.0
+ifcopenshell==0.7.0.240521

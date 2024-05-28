@@ -1,13 +1,15 @@
 import time
+from collections import defaultdict
 from io import BytesIO
 from pathlib import Path
+from pprint import pprint
 from tempfile import NamedTemporaryFile
 from typing import Any, List
 import ifcopenshell
 import ifcopenshell.geom
 from munch import Munch
 from viktor import File, ViktorController
-from viktor.views import IFCView, IFCResult
+from viktor.views import IFCView, IFCResult, DataView, DataResult, DataGroup, DataItem
 from viktor.parametrization import (
     BooleanField,
     DownloadButton,
@@ -17,23 +19,22 @@ from viktor.parametrization import (
     IsFalse,
     Lookup,
     ViktorParametrization,
+    GeometryMultiSelectField, TextField
 )
 from viktor.result import DownloadResult
 from viktor.core import progress_message
+from viktor.errors import UserError, InputViolation
 
 from ifcopenshell import file
+from ifcopenshell.util.element import get_psets
 
 PROGRESS_MESSAGE_DELAY = 3  # seconds
 
 
 def _use_correct_file(params: Munch) -> File:
-    if params.get_sample_ifc_toggle is True:
-        params.use_file = File.from_path(
-            Path(__file__).parent / "rac_advanced_sample_project.ifc"
-        )
-    else:
-        params.use_file = params.ifc_upload.file
-    return params.use_file
+    if params.ifc_upload:
+        return params.ifc_upload.file
+    return File.from_path(Path(__file__).parent / "AC20-Institute-Var-2.ifc")
 
 
 def _load_ifc_file(params: Munch) -> file:
@@ -44,32 +45,14 @@ def _load_ifc_file(params: Munch) -> file:
     return model
 
 
-def get_element_options(params, **kwargs) -> List[str]:
-    """Get all existing geometry element types from ifc file."""
-    if not params.ifc_upload and not params.get_sample_ifc_toggle:
-        return []
-    model = _load_ifc_file(params)
-    elements = model.by_type("IfcElement")
-    element_options = []
-    for element in elements:
-        if element.Representation:
-            element_options.append(element.get_info()["type"])
-    return list(set(element_options))
-
-
 class Parametrization(ViktorParametrization):
     """Viktor parametrization."""
     text1 = Text(
         """
 # Welcome to the IFC-viewer!💻
 This app can import, view, separate and download the 
-elements of an IFC file. The app uses a default IFC file. Alternatively, you can use your own.🏡
+elements of an IFC file. If you do not provide your own file, the app uses a default IFC file.🏡
         """
-    )
-    get_sample_ifc_toggle = BooleanField(
-        "Default IFC File",
-        default=True,
-        flex=30,
     )
     text2 = Text(
         """
@@ -77,34 +60,24 @@ elements of an IFC file. The app uses a default IFC file. Alternatively, you can
 Make sure that your file contains IfcElements with a geometry representation. 
         """
     )
-    ifc_upload = FileField(
-        "Upload model",
-        file_types=[".ifc"],
-        visible=IsFalse(Lookup("get_sample_ifc_toggle")),
-        max_size=45_000_000,
-    )
+    ifc_upload = FileField("Upload model", file_types=[".ifc"], flex=100, max_size=45_000_000,
+                           description="If you leave this empty, the app will use a default file.")
     text3 = Text(
         """
 ## ✔️ Element filtering
-Select which elements to preview. 
+Select which elements to analyze. 
 Only elements existing in the IFC file can be selected. 
         """
     )
-    element_filter = MultiSelectField(
-        "Filter elements",
-        options=get_element_options,
-    )
+    selected_elements = GeometryMultiSelectField("Select elements")
+    relevant_pset = TextField("PSET to analyze", flex=66, default="BaseQuantities", description="Select which PSET in your IFC file you want to analyze.")
     text4 = Text(
         """
 ## 💾 Download
 Only selected elements will be downloaded.
         """
     )
-    download = DownloadButton(
-        "Download",
-        method="download_file",
-        longpoll=True,
-    )
+    download = DownloadButton("Download", method="download_file", longpoll=True)
     text5 = Text(
         """
 Start building cloud apps [now.](https://www.viktor.ai/start-building-apps)
@@ -122,19 +95,19 @@ class Controller(ViktorController):
 
     def download_file(self, params, **kwargs):
         ifc = self.get_filtered_ifc_file(params)
-        return DownloadResult(BytesIO(ifc.getvalue_binary()), 'name_of_file.ifc')
+        return DownloadResult(ifc, 'name_of_file.ifc')
 
     @staticmethod
     def get_filtered_ifc_file(params: Munch, **kwargs) -> File:
+        selected_elements = {int(element) for element in params.selected_elements}
         progress_message("Load IFC file...")
         model = _load_ifc_file(params)
         # initialize the variables responsible for progress message delays
         delta_time = PROGRESS_MESSAGE_DELAY + 1
         start = time.time()
         # remove all other parts from the ifc file which are not viewed
-        print(params.element_filter)
         for element in model.by_type("IfcElement"):
-            if element.get_info()["type"] not in params.element_filter:
+            if element.id not in selected_elements:
                 # print(element.get_info()["type"] )
                 if delta_time > PROGRESS_MESSAGE_DELAY:
                     # the logic of progress message delays is implemented
@@ -146,8 +119,6 @@ class Controller(ViktorController):
             delta_time = time.time() - start
 
         for element in model.by_type("ifcspace"):
-
-            # print(element.get_info()["type"] )
             if delta_time > PROGRESS_MESSAGE_DELAY:
                 # the logic of progress message delays is implemented
                 # to avoid cases where the progress messages
@@ -158,20 +129,43 @@ class Controller(ViktorController):
             delta_time = time.time() - start
 
         # part where we save the model as seen in the viewer
-        progress_message("Save file...")
-        temp_file = NamedTemporaryFile(suffix=".ifc", delete=False, mode="wb")
-        model.write(str(Path(temp_file.name)))
-        temp_file.close()
-        path_out = Path(temp_file.name)
-        progress_message("Download processed file...")
-        action_view = File.from_data(path_out.read_bytes())
-        return action_view
-
+        progress_message("Exporting file...")
+        file_ = File()
+        model.write(file_.source)
+        return file_
 
     @IFCView("IFC view", duration_guess=10)
     def get_ifc_view(self, params, **kwargs):
-        if not params.element_filter:
-            ifc = _use_correct_file(params)
-        else:
-            ifc = self.get_filtered_ifc_file(params)
+        ifc = _use_correct_file(params)
         return IFCResult(ifc)
+
+    @DataView("Analysis on Selection", duration_guess=1)
+    def get_analysis_view(self, params, **kwargs):
+        if not params.selected_elements:
+            raise UserError("No elements selected", input_violations=[
+                InputViolation("This field cannot be empty!", fields=['selected_elements'])
+            ])
+        model = _load_ifc_file(params)
+        try:
+            _objects = [model.by_id(int(id_)) for id_ in params.selected_elements]
+        except RuntimeError:
+            raise UserError(
+                "Selected elements not found in current IFC file. Please re-select the elements.",
+                input_violations=[InputViolation("Selection mismatch with IFC file.", fields=['selected_elements'])]
+            )
+
+        objects_by_type = defaultdict(list)
+        for obj in _objects:
+            objects_by_type[obj.get_info()["type"]].append(obj)
+
+        top_level_items = [DataItem("Number of objects selected", len(_objects), explanation_label="filtered by type")]
+        for ifc_type, object_list in objects_by_type.items():
+            mid_level_items = []
+            for obj_ in object_list:
+                low_level_items = [DataItem(key, val) for key, val in get_psets(obj_).get(params.relevant_pset, {}).items()]
+                if low_level_items:
+                    mid_level_items.append(DataItem(obj_.Name, "  ", subgroup=DataGroup(*low_level_items)))
+                else:
+                    mid_level_items.append(DataItem(obj_.Name, "(No BaseQuantities in psets)"))
+            top_level_items.append(DataItem(ifc_type, len(object_list), subgroup=DataGroup(*mid_level_items)))
+        return DataResult(DataGroup(*top_level_items))
