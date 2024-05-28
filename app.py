@@ -1,32 +1,24 @@
 import time
 from collections import defaultdict
-from io import BytesIO
 from pathlib import Path
-from pprint import pprint
-from tempfile import NamedTemporaryFile
-from typing import Any, List
+
 import ifcopenshell
 import ifcopenshell.geom
+from ifcopenshell import file
+from ifcopenshell.util.element import get_psets
 from munch import Munch
 from viktor import File, ViktorController
-from viktor.views import IFCView, IFCResult, DataView, DataResult, DataGroup, DataItem
+from viktor.core import progress_message
+from viktor.errors import UserError, InputViolation
 from viktor.parametrization import (
-    BooleanField,
     DownloadButton,
     FileField,
-    MultiSelectField,
     Text,
-    IsFalse,
-    Lookup,
     ViktorParametrization,
     GeometryMultiSelectField, TextField
 )
 from viktor.result import DownloadResult
-from viktor.core import progress_message
-from viktor.errors import UserError, InputViolation
-
-from ifcopenshell import file
-from ifcopenshell.util.element import get_psets
+from viktor.views import IFCView, IFCResult, DataView, DataResult, DataGroup, DataItem
 
 PROGRESS_MESSAGE_DELAY = 3  # seconds
 
