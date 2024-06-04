@@ -48,8 +48,8 @@ This app can import, view, analyze and download the elements of an IFC file.🏡
     text2 = Text(
         """
 ## 📂 File upload
-Make sure that your file contains IfcElements with a geometry representation. If you do not provide your own file, 
-the app will use a default IFC file.
+Make sure that your file contains IfcElements with a geometry representation. **If you do not provide your own file, 
+the app will use a default IFC file.**
         """
     )
     ifc_upload = FileField("Upload model", file_types=[".ifc"], flex=100, max_size=45_000_000,
