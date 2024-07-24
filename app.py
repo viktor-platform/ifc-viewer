@@ -29,7 +29,7 @@ def _use_correct_file(params: Munch) -> File:
     return File.from_path(Path(__file__).parent / "AC20-Institute-Var-2.ifc")
 
 
-def _load_ifc_file(params: Munch) -> file:
+def _load_ifc_file(params):
     """Load ifc file into ifc model object."""
     ifc_upload = _use_correct_file(params)
     path = ifc_upload.copy().source
@@ -38,7 +38,6 @@ def _load_ifc_file(params: Munch) -> file:
 
 
 class Parametrization(ViktorParametrization):
-    """Viktor parametrization."""
     text1 = Text(
         """
 # Welcome to the IFC-viewer!💻
@@ -79,11 +78,8 @@ Or check more apps created by others in our [Apps Gallery](https://www.viktor.ai
 
 
 class Controller(ViktorController):
-    """Viktor Controller."""
-
     label = "My Entity Type"
     parametrization = Parametrization(width=30)
-    viktor_enforce_field_constraints = True
 
     def download_file(self, params, **kwargs):
         ifc = self.get_filtered_ifc_file(params)
@@ -94,9 +90,11 @@ class Controller(ViktorController):
         selected_elements = {int(element) for element in params.selected_elements}
         progress_message("Load IFC file...")
         model = _load_ifc_file(params)
+
         # initialize the variables responsible for progress message delays
         delta_time = PROGRESS_MESSAGE_DELAY + 1
         start = time.time()
+
         # remove all other parts from the ifc file which are not viewed
         for element in model.by_type("IfcElement"):
             if element.id not in selected_elements:
