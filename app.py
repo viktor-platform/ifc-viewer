@@ -20,10 +20,13 @@ import ifcopenshell
 
 PROGRESS_MESSAGE_DELAY = 3  # seconds
 
+LIB_DIR = Path(__file__).parent / "lib"
+
 def _use_correct_file(params) -> File:
     if params.ifc_upload:
         return params.ifc_upload.file
-    return File.from_path(Path(__file__).parent / "AC20-Institute-Var-2.ifc")
+    # return File.from_path(Path(__file__).parent / "AC20-Institute-Var-2.ifc")
+    return File.from_path(LIB_DIR / "rac_advanced_sample_project.ifc")
 
 
 def _load_ifc_file(params):
