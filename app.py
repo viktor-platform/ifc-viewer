@@ -1,6 +1,7 @@
 import time
 from collections import defaultdict
 from pathlib import Path
+
 from viktor import File, ViktorController
 from viktor.core import progress_message
 from viktor.errors import InputViolation, UserError
@@ -18,11 +19,16 @@ from viktor.views import DataGroup, DataItem, DataResult, DataView, IFCResult, I
 # IFC library
 import ifcopenshell
 
+
 PROGRESS_MESSAGE_DELAY = 3  # seconds
 
 LIB_DIR = Path(__file__).parent / "lib"
 
+
 def _use_correct_file(params) -> File:
+    """
+    Returns either an uploaded file or a default one
+    """
     if params.ifc_upload:
         return params.ifc_upload.file
     # return File.from_path(Path(__file__).parent / "AC20-Institute-Var-2.ifc")
@@ -97,6 +103,13 @@ class Controller(ViktorController):
 
     @staticmethod
     def get_filtered_ifc_file(params, **kwargs) -> File:
+        """
+        Filter an IFC file based on selected elements and return the filtered file. This method Loads
+        the IFC file. Then,  it filters out elements that are not in the `selected_elements` set, while it
+        provides progress messages during the filtering process, avoiding any flooding of the message queue.
+        In doing so, it removes all elements of type `IfcElement` and `ifcspace` that are not selected.
+        Finally, it returns the filtered IFC as a VIKTOR file.
+        """
         selected_elements = {int(element) for element in params.selected_elements}
         progress_message("Load IFC file...")
         model = _load_ifc_file(params)
@@ -108,7 +121,6 @@ class Controller(ViktorController):
         # remove all other parts from the ifc file which are not viewed
         for element in model.by_type("IfcElement"):
             if element.id not in selected_elements:
-                # print(element.get_info()["type"] )
                 if delta_time > PROGRESS_MESSAGE_DELAY:
                     # the logic of progress message delays is implemented
                     # to avoid cases where the progress messages
@@ -136,11 +148,21 @@ class Controller(ViktorController):
 
     @IFCView("IFC view", duration_guess=10)
     def get_ifc_view(self, params, **kwargs):
+        """
+        View the current active IFC file; either uploaded by the user or default.
+        """
         ifc = _use_correct_file(params)
         return IFCResult(ifc)
 
     @DataView("Analysis on Selection", duration_guess=1)
     def get_analysis_view(self, params, **kwargs):
+        """
+        Generate an analysis view of selected IFC elements. This method checks if any elements are selected,
+        raising a UserError if none are selected. Then, loads the IFC file based on the given parameters and attempts
+        to retrieve the selected elements from the IFC file, raising a UserError if they are not found. It proceeds to
+        group the selected elements by their IFC type and constructs a VIKTOR DataGroup with the number of
+        selected objects, their types, and relevant property sets.
+        """
         if not params.selected_elements:
             raise UserError(
                 "No elements selected",
