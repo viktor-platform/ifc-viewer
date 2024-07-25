@@ -1,29 +1,26 @@
 import time
 from collections import defaultdict
 from pathlib import Path
-
-import ifcopenshell
-import ifcopenshell.geom
-from ifcopenshell import file
-from ifcopenshell.util.element import get_psets
-from munch import Munch
 from viktor import File, ViktorController
 from viktor.core import progress_message
-from viktor.errors import UserError, InputViolation
+from viktor.errors import InputViolation, UserError
 from viktor.parametrization import (
     DownloadButton,
     FileField,
+    GeometryMultiSelectField,
     Text,
+    TextField,
     ViktorParametrization,
-    GeometryMultiSelectField, TextField
 )
 from viktor.result import DownloadResult
-from viktor.views import IFCView, IFCResult, DataView, DataResult, DataGroup, DataItem
+from viktor.views import DataGroup, DataItem, DataResult, DataView, IFCResult, IFCView
+
+# IFC library
+import ifcopenshell
 
 PROGRESS_MESSAGE_DELAY = 3  # seconds
 
-
-def _use_correct_file(params: Munch) -> File:
+def _use_correct_file(params) -> File:
     if params.ifc_upload:
         return params.ifc_upload.file
     return File.from_path(Path(__file__).parent / "AC20-Institute-Var-2.ifc")
@@ -51,8 +48,13 @@ Make sure that your file contains IfcElements with a geometry representation. **
 the app will use a default IFC file.**
         """
     )
-    ifc_upload = FileField("Upload model", file_types=[".ifc"], flex=100, max_size=45_000_000,
-                           description="If you leave this empty, the app will use a default file.")
+    ifc_upload = FileField(
+        "Upload model",
+        file_types=[".ifc"],
+        flex=100,
+        max_size=45_000_000,
+        description="If you leave this empty, the app will use a default file.",
+    )
     text3 = Text(
         """
 ## ✔️ Element filtering
@@ -61,7 +63,12 @@ Only elements existing in the IFC file can be selected.
         """
     )
     selected_elements = GeometryMultiSelectField("Select elements")
-    relevant_pset = TextField("PSET to analyze", flex=66, default="BaseQuantities", description="Select which PSET in your IFC file you want to analyze.")
+    relevant_pset = TextField(
+        "PSET to analyze",
+        flex=66,
+        default="BaseQuantities",
+        description="Select which PSET in your IFC file you want to analyze.",
+    )
     text4 = Text(
         """
 ## 💾 Download
@@ -83,10 +90,10 @@ class Controller(ViktorController):
 
     def download_file(self, params, **kwargs):
         ifc = self.get_filtered_ifc_file(params)
-        return DownloadResult(ifc, 'name_of_file.ifc')
+        return DownloadResult(ifc, "name_of_file.ifc")
 
     @staticmethod
-    def get_filtered_ifc_file(params: Munch, **kwargs) -> File:
+    def get_filtered_ifc_file(params, **kwargs) -> File:
         selected_elements = {int(element) for element in params.selected_elements}
         progress_message("Load IFC file...")
         model = _load_ifc_file(params)
@@ -132,30 +139,59 @@ class Controller(ViktorController):
     @DataView("Analysis on Selection", duration_guess=1)
     def get_analysis_view(self, params, **kwargs):
         if not params.selected_elements:
-            raise UserError("No elements selected", input_violations=[
-                InputViolation("This field cannot be empty!", fields=['selected_elements'])
-            ])
+            raise UserError(
+                "No elements selected",
+                input_violations=[
+                    InputViolation(
+                        "This field cannot be empty!", fields=["selected_elements"]
+                    )
+                ],
+            )
         model = _load_ifc_file(params)
         try:
             _objects = [model.by_id(int(id_)) for id_ in params.selected_elements]
         except RuntimeError:
             raise UserError(
                 "Selected elements not found in current IFC file. Please re-select the elements.",
-                input_violations=[InputViolation("Selection mismatch with IFC file.", fields=['selected_elements'])]
+                input_violations=[
+                    InputViolation(
+                        "Selection mismatch with IFC file.",
+                        fields=["selected_elements"],
+                    )
+                ],
             )
 
         objects_by_type = defaultdict(list)
         for obj in _objects:
             objects_by_type[obj.get_info()["type"]].append(obj)
 
-        top_level_items = [DataItem("Number of objects selected", len(_objects), explanation_label="filtered by type")]
+        top_level_items = [
+            DataItem(
+                "Number of objects selected",
+                len(_objects),
+                explanation_label="filtered by type",
+            )
+        ]
         for ifc_type, object_list in objects_by_type.items():
             mid_level_items = []
             for obj_ in object_list:
-                low_level_items = [DataItem(key, val) for key, val in get_psets(obj_).get(params.relevant_pset, {}).items()]
+                low_level_items = [
+                    DataItem(key, val)
+                    for key, val in ifcopenshell.util.element.get_psets(obj_)
+                    .get(params.relevant_pset, {})
+                    .items()
+                ]
                 if low_level_items:
-                    mid_level_items.append(DataItem(obj_.Name, "  ", subgroup=DataGroup(*low_level_items)))
+                    mid_level_items.append(
+                        DataItem(obj_.Name, "  ", subgroup=DataGroup(*low_level_items))
+                    )
                 else:
-                    mid_level_items.append(DataItem(obj_.Name, "(No BaseQuantities in psets)"))
-            top_level_items.append(DataItem(ifc_type, len(object_list), subgroup=DataGroup(*mid_level_items)))
+                    mid_level_items.append(
+                        DataItem(obj_.Name, "(No BaseQuantities in psets)")
+                    )
+            top_level_items.append(
+                DataItem(
+                    ifc_type, len(object_list), subgroup=DataGroup(*mid_level_items)
+                )
+            )
         return DataResult(DataGroup(*top_level_items))
