@@ -31,7 +31,7 @@ def _use_correct_file(params) -> File:
     """
     if params.ifc_upload:
         return params.ifc_upload.file
-    return File.from_path(Path(__file__).parent / "AC20-Institute-Var-2.ifc")
+    return File.from_path(LIB_DIR / "AC20-Institute-Var-2.ifc")
 
 
 def _load_ifc_file(params):
