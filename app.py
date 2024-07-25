@@ -2,6 +2,10 @@ import time
 from collections import defaultdict
 from pathlib import Path
 
+# IFC library
+from ifcopenshell import open as openIFC
+from ifcopenshell.util.element import get_psets
+
 from viktor import File, ViktorController
 from viktor.core import progress_message
 from viktor.errors import InputViolation, UserError
@@ -15,10 +19,6 @@ from viktor.parametrization import (
 )
 from viktor.result import DownloadResult
 from viktor.views import DataGroup, DataItem, DataResult, DataView, IFCResult, IFCView
-
-# IFC library
-import ifcopenshell
-
 
 PROGRESS_MESSAGE_DELAY = 3  # seconds
 
@@ -38,7 +38,7 @@ def _load_ifc_file(params):
     """Load ifc file into ifc model object."""
     ifc_upload = _use_correct_file(params)
     path = ifc_upload.copy().source
-    model = ifcopenshell.open(path)
+    model = openIFC(path)
     return model
 
 
@@ -201,7 +201,7 @@ class Controller(ViktorController):
             for obj_ in object_list:
                 low_level_items = [
                     DataItem(key, val)
-                    for key, val in ifcopenshell.util.element.get_psets(obj_)
+                    for key, val in get_psets(obj_)
                     .get(params.relevant_pset, {})
                     .items()
                 ]
