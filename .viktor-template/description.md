@@ -2,7 +2,7 @@ This sample app demonstrates how to import, view and transform IFC files.
 
 The IFC filetype (.ifc) is an international standard to import and export building objects and their properties.
 Most BIM-software packages allow you to import and export IFC files. With this application we want to show how to
-handle IFC files in a VIKTOR application.
+handle IFC files in a VIKTOR application using the Python library [`ifcopenshell`](https://ifcopenshell.org/)
 
 A user is guided through the following steps:
 
