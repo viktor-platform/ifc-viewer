@@ -1,4 +1,4 @@
-# ifc-viewer
+# IFC-viewer
 This sample app demonstrates how to import, view and transform IFC files, see an animation of the VIKTOR application below.
 You can access the app right now, using this [link!](https://demo.viktor.ai/public/ifc-viewer)
 
@@ -13,8 +13,12 @@ IfcElements with a geometry representation. The app is tested with IFC 4 files. 
 https://revit.downloads.autodesk.com/download/2024RVT_RTM/Docs/InProd/racadvancedsampleproject.rvt
 
 ## Element filtering
-Select which elements to preview. Only elements existing in the IFC file can be selected. Geometry of selected elements 
+Select which elements to preview. Only elements existing in the IFC file can be selected. The selected elements can subsequently be inspected more closely in the "Analysis on Selection" tab. 
+![](.viktor-template/ifc-filtering-demo.gif)
+
+Geometry of selected elements 
 will be shown in the 3D viewer. 
+
 
 ## View
 Click update to refresh the view. Click the download button the export the (filtered) IFC file.
