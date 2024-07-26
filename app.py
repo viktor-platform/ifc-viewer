@@ -2,7 +2,6 @@ import time
 from collections import defaultdict
 from pathlib import Path
 
-# IFC library
 from ifcopenshell import open as openIFC
 from ifcopenshell.util.element import get_psets
 
@@ -20,9 +19,8 @@ from viktor.parametrization import (
 from viktor.result import DownloadResult
 from viktor.views import DataGroup, DataItem, DataResult, DataView, IFCResult, IFCView
 
-PROGRESS_MESSAGE_DELAY = 3  # seconds
 
-LIB_DIR = Path(__file__).parent / "lib"
+PROGRESS_MESSAGE_DELAY = 3  # seconds
 
 
 def _use_correct_file(params) -> File:
@@ -31,7 +29,7 @@ def _use_correct_file(params) -> File:
     """
     if params.ifc_upload:
         return params.ifc_upload.file
-    return File.from_path(LIB_DIR / "AC20-Institute-Var-2.ifc")
+    return File.from_path(Path(__file__).parent / "AC20-Institute-Var-2.ifc")
 
 
 def _load_ifc_file(params):
@@ -42,11 +40,58 @@ def _load_ifc_file(params):
     return model
 
 
+def get_filtered_ifc_file(params, **kwargs) -> File:
+    """
+    Filter an IFC file based on selected elements and return the filtered file. This method Loads
+    the IFC file. Then,  it filters out elements that are not in the `selected_elements` set, while it
+    provides progress messages during the filtering process, avoiding any flooding of the message queue.
+    In doing so, it removes all elements of type `IfcElement` and `ifcspace` that are not selected.
+    Finally, it returns the filtered IFC as a VIKTOR file.
+    """
+    selected_elements = {int(element) for element in params.selected_elements}
+    progress_message("Load IFC file...")
+    model = _load_ifc_file(params)
+
+    # initialize the variables responsible for progress message delays
+    delta_time = PROGRESS_MESSAGE_DELAY + 1
+    start = time.time()
+
+    # remove all other parts from the ifc file which are not viewed
+    for element in model.by_type("IfcElement"):
+        if element.id() not in selected_elements:
+            if delta_time > PROGRESS_MESSAGE_DELAY:
+                # the logic of progress message delays is implemented
+                # to avoid cases where the progress messages
+                # flood the progress message queue
+                start = time.time()
+                progress_message(f"Removing element: {element.get_info()['type']}")
+            model.remove(element)
+        delta_time = time.time() - start
+    
+    # remove other types
+    for t in ("IfcSpace", "IfcSite"):
+        for element in model.by_type(t):
+            if delta_time > PROGRESS_MESSAGE_DELAY:
+                # the logic of progress message delays is implemented
+                # to avoid cases where the progress messages
+                # flood the progress message queue
+                start = time.time()
+                progress_message(f"Removing element: {element.get_info()['type']}")
+            model.remove(element)
+            delta_time = time.time() - start
+
+    # part where we save the model as seen in the viewer
+    progress_message("Exporting file...")
+    file = File()
+    model.write(file.source)
+    return file
+
+
 class Parametrization(ViktorParametrization):
     text1 = Text(
         """
 # Welcome to the IFC-viewer!💻
-This app can import, view, analyze and download the elements of an IFC file.🏡
+In this app you can import, view, analyze and download the elements of an IFC file.🏡
         """
     )
     text2 = Text(
@@ -84,12 +129,6 @@ Only selected elements will be downloaded.
         """
     )
     download = DownloadButton("Download", method="download_file", longpoll=True)
-    text5 = Text(
-        """
-Start building cloud apps [now.](https://www.viktor.ai/start-building-apps)
-Or check more apps created by others in our [Apps Gallery](https://www.viktor.ai/apps-gallery/category/all/discipline/all/integration/all/1)🚀 
-        """
-    )
 
 
 class Controller(ViktorController):
@@ -97,53 +136,8 @@ class Controller(ViktorController):
     parametrization = Parametrization(width=30)
 
     def download_file(self, params, **kwargs):
-        ifc = self.get_filtered_ifc_file(params)
+        ifc = get_filtered_ifc_file(params)
         return DownloadResult(ifc, "name_of_file.ifc")
-
-    @staticmethod
-    def get_filtered_ifc_file(params, **kwargs) -> File:
-        """
-        Filter an IFC file based on selected elements and return the filtered file. This method Loads
-        the IFC file. Then,  it filters out elements that are not in the `selected_elements` set, while it
-        provides progress messages during the filtering process, avoiding any flooding of the message queue.
-        In doing so, it removes all elements of type `IfcElement` and `ifcspace` that are not selected.
-        Finally, it returns the filtered IFC as a VIKTOR file.
-        """
-        selected_elements = {int(element) for element in params.selected_elements}
-        progress_message("Load IFC file...")
-        model = _load_ifc_file(params)
-
-        # initialize the variables responsible for progress message delays
-        delta_time = PROGRESS_MESSAGE_DELAY + 1
-        start = time.time()
-
-        # remove all other parts from the ifc file which are not viewed
-        for element in model.by_type("IfcElement"):
-            if element.id not in selected_elements:
-                if delta_time > PROGRESS_MESSAGE_DELAY:
-                    # the logic of progress message delays is implemented
-                    # to avoid cases where the progress messages
-                    # flood the progress message queue
-                    start = time.time()
-                    progress_message(f"Removing element: {element.get_info()['type']}")
-                model.remove(element)
-            delta_time = time.time() - start
-
-        for element in model.by_type("ifcspace"):
-            if delta_time > PROGRESS_MESSAGE_DELAY:
-                # the logic of progress message delays is implemented
-                # to avoid cases where the progress messages
-                # flood the progress message queue
-                start = time.time()
-                progress_message(f"Removing element: {element.get_info()['type']}")
-            model.remove(element)
-            delta_time = time.time() - start
-
-        # part where we save the model as seen in the viewer
-        progress_message("Exporting file...")
-        file_ = File()
-        model.write(file_.source)
-        return file_
 
     @IFCView("IFC view", duration_guess=10)
     def get_ifc_view(self, params, **kwargs):
