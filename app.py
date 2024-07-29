@@ -45,7 +45,7 @@ def get_filtered_ifc_file(params, **kwargs) -> File:
     Filter an IFC file based on selected elements and return the filtered file. This method Loads
     the IFC file. Then,  it filters out elements that are not in the `selected_elements` set, while it
     provides progress messages during the filtering process, avoiding any flooding of the message queue.
-    In doing so, it removes all elements of type `IfcElement` and `ifcspace` that are not selected.
+    In doing so, it removes all elements of type `IfcElement`, `IfcSpace` and IfcSite` that are not selected.
     Finally, it returns the filtered IFC as a VIKTOR file.
     """
     selected_elements = {int(element) for element in params.selected_elements}
@@ -144,7 +144,10 @@ class Controller(ViktorController):
         """
         View the current active IFC file; either uploaded by the user or default.
         """
-        ifc = _use_correct_file(params)
+        if params.selected_elements:
+            ifc = get_filtered_ifc_file(params)
+        else:
+            ifc = _use_correct_file(params)
         return IFCResult(ifc)
 
     @DataView("Analysis on Selection", duration_guess=1)
