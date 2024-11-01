@@ -1,2 +1,2 @@
-viktor==14.13.0
+viktor>=14, <15
 ifcopenshell==0.7.0.240627

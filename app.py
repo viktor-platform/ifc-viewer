@@ -5,31 +5,18 @@ from pathlib import Path
 from ifcopenshell import open as openIFC
 from ifcopenshell.util.element import get_psets
 
-from viktor import File, ViktorController
-from viktor.core import progress_message
-from viktor.errors import InputViolation, UserError
-from viktor.parametrization import (
-    DownloadButton,
-    FileField,
-    GeometryMultiSelectField,
-    Text,
-    TextField,
-    ViktorParametrization,
-)
-from viktor.result import DownloadResult
-from viktor.views import DataGroup, DataItem, DataResult, DataView, IFCResult, IFCView
-
+import viktor as vkt
 
 PROGRESS_MESSAGE_DELAY = 3  # seconds
 
 
-def _use_correct_file(params) -> File:
+def _use_correct_file(params) -> vkt.File:
     """
     Returns either an uploaded file or a default one
     """
     if params.ifc_upload:
         return params.ifc_upload.file
-    return File.from_path(Path(__file__).parent / "AC20-Institute-Var-2.ifc")
+    return vkt.File.from_path(Path(__file__).parent / "AC20-Institute-Var-2.ifc")
 
 
 def _load_ifc_file(params):
@@ -40,7 +27,7 @@ def _load_ifc_file(params):
     return model
 
 
-def get_filtered_ifc_file(params, **kwargs) -> File:
+def get_filtered_ifc_file(params, **kwargs) -> vkt.File:
     """
     Filter an IFC file based on selected elements and return the filtered file. This method Loads
     the IFC file. Then,  it filters out elements that are not in the `selected_elements` set, while it
@@ -49,7 +36,7 @@ def get_filtered_ifc_file(params, **kwargs) -> File:
     Finally, it returns the filtered IFC as a VIKTOR file.
     """
     selected_elements = {int(element) for element in params.selected_elements}
-    progress_message("Load IFC file...")
+    vkt.progress_message("Load IFC file...")
     model = _load_ifc_file(params)
 
     # initialize the variables responsible for progress message delays
@@ -64,7 +51,7 @@ def get_filtered_ifc_file(params, **kwargs) -> File:
                 # to avoid cases where the progress messages
                 # flood the progress message queue
                 start = time.time()
-                progress_message(f"Removing element: {element.get_info()['type']}")
+                vkt.progress_message(f"Removing element: {element.get_info()['type']}")
             model.remove(element)
         delta_time = time.time() - start
     
@@ -76,70 +63,70 @@ def get_filtered_ifc_file(params, **kwargs) -> File:
                 # to avoid cases where the progress messages
                 # flood the progress message queue
                 start = time.time()
-                progress_message(f"Removing element: {element.get_info()['type']}")
+                vkt.progress_message(f"Removing element: {element.get_info()['type']}")
             model.remove(element)
             delta_time = time.time() - start
 
     # part where we save the model as seen in the viewer
-    progress_message("Exporting file...")
-    file = File()
+    vkt.progress_message("Exporting file...")
+    file = vkt.File()
     model.write(file.source)
     return file
 
 
-class Parametrization(ViktorParametrization):
-    text1 = Text(
+class Parametrization(vkt.ViktorParametrization):
+    text1 = vkt.Text(
         """
 # Welcome to the IFC-viewer!💻
 In this app you can import, view, analyze and download the elements of an IFC file.🏡
         """
     )
-    text2 = Text(
+    text2 = vkt.Text(
         """
 ## 📂 File upload
 Make sure that your file contains IfcElements with a geometry representation. **If you do not provide your own file, 
 the app will use a default IFC file.**
         """
     )
-    ifc_upload = FileField(
+    ifc_upload = vkt.FileField(
         "Upload model",
         file_types=[".ifc"],
         flex=100,
         max_size=45_000_000,
         description="If you leave this empty, the app will use a default file.",
     )
-    text3 = Text(
+    text3 = vkt.Text(
         """
 ## ✔️ Element filtering
 Select which elements to analyze. 
 Only elements existing in the IFC file can be selected. 
         """
     )
-    selected_elements = GeometryMultiSelectField("Select elements")
-    relevant_pset = TextField(
+    selected_elements = vkt.GeometryMultiSelectField("Select elements")
+    relevant_pset = vkt.TextField(
         "PSET to analyze",
         flex=66,
         default="BaseQuantities",
         description="Select which PSET in your IFC file you want to analyze.",
     )
-    text4 = Text(
+    text4 = vkt.Text(
         """
 ## 💾 Download
 Only selected elements will be downloaded.
         """
     )
-    download = DownloadButton("Download", method="download_file", longpoll=True)
+    download = vkt.DownloadButton("Download", method="download_file", longpoll=True)
 
 
-class Controller(ViktorController):
+class Controller(vkt.ViktorController):
     label = "My Entity Type"
     parametrization = Parametrization(width=30)
 
     def download_file(self, params, **kwargs):
         ifc = get_filtered_ifc_file(params)
-        return DownloadResult(ifc, "name_of_file.ifc")
+        return vkt.DownloadResult(ifc, "name_of_file.ifc")
 
-    @IFCView("IFC view", duration_guess=10)
+    @vkt.IFCView("IFC view", duration_guess=10)
     def get_ifc_view(self, params, **kwargs):
         """
         View the current active IFC file; either uploaded by the user or default.
@@ -148,9 +135,9 @@ class Controller(ViktorController):
             ifc = get_filtered_ifc_file(params)
         else:
             ifc = _use_correct_file(params)
-        return IFCResult(ifc)
+        return vkt.IFCResult(ifc)
 
-    @DataView("Analysis on Selection", duration_guess=1)
+    @vkt.DataView("Analysis on Selection", duration_guess=1)
     def get_analysis_view(self, params, **kwargs):
         """
         Generate an analysis view of selected IFC elements. This method checks if any elements are selected,
@@ -160,10 +147,10 @@ class Controller(ViktorController):
         selected objects, their types, and relevant property sets.
         """
         if not params.selected_elements:
-            raise UserError(
+            raise vkt.UserError(
                 "No elements selected",
                 input_violations=[
-                    InputViolation(
+                    vkt.InputViolation(
                         "This field cannot be empty!", fields=["selected_elements"]
                     )
                 ],
@@ -172,10 +159,10 @@ class Controller(ViktorController):
         try:
             _objects = [model.by_id(int(id_)) for id_ in params.selected_elements]
         except RuntimeError:
-            raise UserError(
+            raise vkt.UserError(
                 "Selected elements not found in current IFC file. Please re-select the elements.",
                 input_violations=[
-                    InputViolation(
+                    vkt.InputViolation(
                         "Selection mismatch with IFC file.",
                         fields=["selected_elements"],
                     )
@@ -187,7 +174,7 @@ class Controller(ViktorController):
             objects_by_type[obj.get_info()["type"]].append(obj)
 
         top_level_items = [
-            DataItem(
+            vkt.DataItem(
                 "Number of objects selected",
                 len(_objects),
                 explanation_label="filtered by type",
@@ -197,22 +184,22 @@ class Controller(ViktorController):
             mid_level_items = []
             for obj_ in object_list:
                 low_level_items = [
-                    DataItem(key, val)
+                    vkt.DataItem(key, val)
                     for key, val in get_psets(obj_)
                     .get(params.relevant_pset, {})
                     .items()
                 ]
                 if low_level_items:
                     mid_level_items.append(
-                        DataItem(obj_.Name, "  ", subgroup=DataGroup(*low_level_items))
+                        vkt.DataItem(obj_.Name, "  ", subgroup=vkt.DataGroup(*low_level_items))
                     )
                 else:
                     mid_level_items.append(
-                        DataItem(obj_.Name, "(No BaseQuantities in psets)")
+                        vkt.DataItem(obj_.Name, "(No BaseQuantities in psets)")
                     )
             top_level_items.append(
-                DataItem(
-                    ifc_type, len(object_list), subgroup=DataGroup(*mid_level_items)
+                vkt.DataItem(
+                    ifc_type, len(object_list), subgroup=vkt.DataGroup(*mid_level_items)
                 )
             )
-        return DataResult(DataGroup(*top_level_items))
+        return vkt.DataResult(vkt.DataGroup(*top_level_items))
